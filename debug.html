@@ -3,61 +3,92 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Debug — all photos</title>
+  <title>Debug — photos</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400&display=swap">
   <style>
-    :root { --bg: #fff; --fg: #000; --muted: #888; --warn: #b8860b; --danger: #c0392b; }
+    :root { --bg: #fff; --fg: #000; --muted: #888; --warn: #b8860b; --danger: #c0392b; --pick: #2563eb; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
-    header { padding: 1.5rem 2rem 0.5rem; }
-    h1 { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 400; margin: 0 0 0.5rem; font-size: 1.75rem; }
-    .summary { color: var(--muted); font-size: 0.9rem; }
-    .legend { display: flex; gap: 1rem; padding: 0.75rem 2rem; font-size: 0.8rem; color: var(--muted); flex-wrap: wrap; }
+    header { padding: 1.25rem 1rem 0.5rem; }
+    h1 { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 400; margin: 0 0 0.5rem; font-size: 1.5rem; }
+    .summary { color: var(--muted); font-size: 0.85rem; }
+    .mode { display: inline-flex; gap: 0; margin: 0.5rem 0; border: 1px solid #ccc; }
+    .mode button { background: #fff; border: none; padding: 0.4rem 0.9rem; font: inherit; font-size: 0.85rem;
+      cursor: pointer; min-height: 44px; }
+    .mode button.active { background: #000; color: #fff; }
+    .legend { display: flex; gap: 1rem; padding: 0.5rem 1rem; font-size: 0.75rem; color: var(--muted); flex-wrap: wrap; }
     .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 0.4rem; vertical-align: middle; }
     .legend .included::before { background: #000; }
     .legend .excluded::before { background: #ccc; }
     .legend .orphaned::before { background: var(--warn); }
     .legend .marked::before { background: var(--danger); }
-    .group { padding: 0.5rem 2rem 2rem; }
-    .group h2 { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 400; font-size: 1.25rem;
-      margin: 1rem 0 0.75rem; border-bottom: 1px solid #eee; padding-bottom: 0.25rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; }
-    .tile { position: relative; cursor: pointer; user-select: none; background: #f6f6f6; border: 2px solid transparent; }
-    .tile img { display: block; width: 100%; height: 180px; object-fit: cover; }
-    .tile .caption { font-size: 0.7rem; padding: 0.3rem 0.4rem; color: #333; word-break: break-all; line-height: 1.2; }
+    .legend .selected::before { background: var(--pick); }
+
+    .group { padding: 0.5rem 1rem 1.5rem; }
+    .group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem;
+      border-bottom: 1px solid #eee; padding-bottom: 0.25rem; margin: 0.75rem 0 0.5rem; flex-wrap: wrap; }
+    .group-head h2 { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 400; font-size: 1.25rem;
+      margin: 0; }
+    .group-head .meta { font-size: 0.75rem; color: var(--muted); }
+    .group-head input { font: inherit; font-family: "Cormorant Garamond", Georgia, serif; font-size: 1.25rem;
+      border: 1px solid #aaa; padding: 0.2rem 0.4rem; min-width: 8rem; }
+    .group-head input.coord { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; width: 5.5rem; }
+    .group-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .group-actions button, .group-actions select { font: inherit; font-size: 0.75rem; padding: 0.3rem 0.6rem;
+      background: #fff; color: #000; border: 1px solid #999; cursor: pointer; min-height: 36px; }
+    .group-actions button.danger { color: var(--danger); border-color: var(--danger); }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.6rem; }
+    .tile { position: relative; cursor: pointer; user-select: none; background: #f6f6f6;
+      border: 2px solid transparent; }
+    .tile img { display: block; width: 100%; height: 150px; object-fit: cover; }
+    .tile .caption { font-size: 0.65rem; padding: 0.25rem 0.35rem; color: #333; word-break: break-all; line-height: 1.2; }
+    .tile .status { position: absolute; top: 4px; left: 4px; background: rgba(255,255,255,0.85);
+      font-size: 0.6rem; padding: 1px 5px; border-radius: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
     .tile.excluded { opacity: 0.55; border-color: #ccc; }
     .tile.orphaned { border-color: var(--warn); }
     .tile.marked { border-color: var(--danger); }
     .tile.marked img { opacity: 0.25; }
-    .tile.marked::after { content: "✕ marked"; position: absolute; top: 50%; left: 50%;
-      transform: translate(-50%, -50%); color: var(--danger); font-size: 1.5rem; pointer-events: none;
-      font-family: "Cormorant Garamond", Georgia, serif; }
-    .tile .status { position: absolute; top: 4px; left: 4px; background: rgba(255,255,255,0.85);
-      font-size: 0.65rem; padding: 1px 5px; border-radius: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .tile.marked::after { content: "✕"; position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%); color: var(--danger); font-size: 2rem; pointer-events: none; }
+    .tile.selected { border-color: var(--pick); box-shadow: 0 0 0 2px var(--pick) inset; }
+    .tile.selected::after { content: "✓"; position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%); color: var(--pick); font-size: 2rem; pointer-events: none; }
+
     .panel { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #ddd;
-      padding: 0.75rem 1rem; box-shadow: 0 -4px 12px rgba(0,0,0,0.05); max-height: 55vh; display: flex;
-      flex-direction: column; gap: 0.5rem; }
-    .panel-bar { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
-    .panel .count { font-family: "Cormorant Garamond", Georgia, serif; font-size: 1.1rem; min-width: 6rem; }
-    .panel button, .panel a.btn { font-family: inherit; font-size: 0.85rem; padding: 0.4rem 0.7rem;
+      padding: 0.6rem 0.9rem; box-shadow: 0 -4px 12px rgba(0,0,0,0.05); max-height: 55vh; display: flex;
+      flex-direction: column; gap: 0.4rem; z-index: 50; }
+    .panel-bar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .panel .count { font-family: "Cormorant Garamond", Georgia, serif; font-size: 1rem; min-width: 5rem; }
+    .panel button, .panel a.btn, .panel select { font: inherit; font-size: 0.85rem; padding: 0.4rem 0.7rem;
       cursor: pointer; background: #000; color: #fff; border: none; text-decoration: none;
-      display: inline-block; }
+      display: inline-block; min-height: 40px; }
+    .panel select { background: #fff; color: #000; border: 1px solid #999; }
     .panel button:disabled, .panel a.btn[aria-disabled="true"] { background: #ccc; cursor: default;
-      pointer-events: none; }
-    .panel .clear { background: transparent; color: #555; }
-    .panel-list { overflow-y: auto; border-top: 1px solid #eee; padding-top: 0.4rem; }
-    .panel-list ul { list-style: none; padding: 0; margin: 0; font-size: 0.8rem; }
-    .panel-list li { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
-      padding: 0.25rem 0; border-bottom: 1px dotted #eee; }
-    .panel-list .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
-    .panel-list a { color: var(--danger); text-decoration: none; white-space: nowrap; font-size: 0.75rem; }
-    .panel-list a:hover { text-decoration: underline; }
+      pointer-events: none; color: #fff; }
+    .panel .clear, .panel .secondary { background: transparent; color: #555; border: 1px solid #ccc; }
+    .panel-list { overflow-y: auto; border-top: 1px solid #eee; padding-top: 0.4rem; font-size: 0.78rem; }
+    .panel-list ul { list-style: none; padding: 0; margin: 0; }
+    .panel-list li { padding: 0.2rem 0; border-bottom: 1px dotted #eee; word-break: break-word; }
+    .panel-list .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .panel-list a { color: var(--danger); text-decoration: none; white-space: nowrap; font-size: 0.75rem; margin-left: 0.5rem; }
     .panel textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 0.7rem; padding: 0.4rem; border: 1px solid #ddd; resize: vertical; min-height: 2rem; }
-    details summary { cursor: pointer; font-size: 0.8rem; color: #555; }
+    details summary { cursor: pointer; font-size: 0.8rem; color: #555; padding: 0.2rem 0; }
+
+    .new-loc { padding: 0.75rem 1rem; background: #f3f3f3; margin: 0.5rem 1rem; border: 1px dashed #aaa; }
+    .new-loc h3 { margin: 0 0 0.4rem; font-family: "Cormorant Garamond", Georgia, serif; font-weight: 400;
+      font-size: 1.1rem; }
+    .new-loc input { font: inherit; font-size: 0.85rem; padding: 0.3rem 0.5rem; border: 1px solid #aaa;
+      margin-right: 0.4rem; min-height: 40px; }
+    .new-loc button { font: inherit; font-size: 0.85rem; padding: 0.4rem 0.8rem; cursor: pointer;
+      background: #000; color: #fff; border: none; min-height: 40px; }
+    .banner { padding: 0.6rem 1rem; background: #fff5d6; border-bottom: 1px solid #e6d59e; font-size: 0.85rem;
+      color: #6b4f00; }
+
     main { padding-bottom: 60vh; }
   </style>
 </head>
@@ -65,70 +96,146 @@
   <header>
     <h1>Photo debug</h1>
     <div class="summary" id="summary">Loading…</div>
-  </header>
-  <div class="legend">
-    <span class="included">included in locations.js</span>
-    <span class="excluded">commented out</span>
-    <span class="orphaned">orphaned on disk</span>
-    <span class="marked">marked for deletion</span>
-  </div>
-  <main id="main"></main>
-  <div class="panel">
-    <div class="panel-bar">
-      <div class="count" id="count">0 marked</div>
-      <a id="submit" class="btn" aria-disabled="true" target="_blank" rel="noopener">Request scrub from Claude →</a>
-      <button id="copy" disabled>Copy paths</button>
-      <button id="clear" class="clear">Clear marks</button>
+    <div class="mode" role="tablist">
+      <button id="mode-scrub" class="active" role="tab">Scrub</button>
+      <button id="mode-organize" role="tab">Organize</button>
     </div>
-    <div class="panel-list" id="panellist">
-      <em style="color:#888;font-size:0.85rem;">Tap photos above to mark them for deletion.</em>
+  </header>
+  <div id="banner"></div>
+  <div class="legend" id="legend"></div>
+  <div id="new-loc-wrap" hidden></div>
+  <main id="main"></main>
+
+  <!-- Scrub-mode panel -->
+  <div class="panel" id="panel-scrub">
+    <div class="panel-bar">
+      <div class="count" id="scrub-count">0 marked</div>
+      <a id="scrub-submit" class="btn" aria-disabled="true" target="_blank" rel="noopener">Request scrub from Claude →</a>
+      <button id="scrub-copy" disabled>Copy paths</button>
+      <button id="scrub-clear" class="clear">Clear</button>
+    </div>
+    <div class="panel-list" id="scrub-list">
+      <em style="color:#888;">Tap photos above to mark them for deletion.</em>
     </div>
     <details>
-      <summary>Other options: per-file GitHub delete / git rm command</summary>
-      <div id="perfile" style="margin: 0.4rem 0;"></div>
-      <textarea id="rmcmd" readonly rows="3"></textarea>
+      <summary>Other options: per-file GitHub delete / git rm</summary>
+      <div id="scrub-perfile" style="margin: 0.4rem 0;"></div>
+      <textarea id="scrub-rmcmd" readonly rows="3"></textarea>
     </details>
   </div>
 
-  <script>
-    const STORAGE_KEY = 'debug-marked-photos';
+  <!-- Organize-mode panel -->
+  <div class="panel" id="panel-organize" hidden>
+    <div class="panel-bar">
+      <div class="count" id="org-count">0 selected</div>
+      <select id="org-move-target"><option value="">Move to…</option></select>
+      <button id="org-move-go" disabled>Move</button>
+      <button id="org-clear-sel" class="clear">Clear</button>
+      <button id="org-new-loc" class="secondary">+ New location</button>
+    </div>
+    <div class="panel-bar">
+      <a id="org-submit" class="btn" aria-disabled="true" target="_blank" rel="noopener">Submit changes to Claude →</a>
+      <button id="org-reset" class="secondary">Reset draft</button>
+    </div>
+    <div class="panel-list" id="org-changes">
+      <em style="color:#888;">No pending changes.</em>
+    </div>
+  </div>
 
+  <script>
+    const REPO = 'rohansonecha/rohansonecha.github.io';
+    const DELETE_BRANCH = 'main';
+    const SCRUB_KEY = 'debug-marked-photos';
+    const ORG_KEY = 'debug-organize-draft';
+    const ORG_BASE_KEY = 'debug-organize-base';
+
+    // ---------- shared state ----------
+    let manifest = [];           // string[] of image paths on disk
+    let originalLocations = [];  // parsed from locations.js (the live, included list)
+    let locStatus = new Map();   // path -> 'included' | 'excluded'
+    let mode = 'scrub';
+    let scrubMarked = new Set();
+    let draft = null;            // array of location objects (organize mode draft)
+    let selectedPhotos = new Set();
+
+    // ---------- utilities ----------
     async function loadText(url) {
-      const r = await fetch(url);
+      const r = await fetch(url + '?_=' + Date.now());
       if (!r.ok) throw new Error(`${url}: ${r.status}`);
       return r.text();
     }
     async function loadJson(url) {
-      const r = await fetch(url);
+      const r = await fetch(url + '?_=' + Date.now());
       if (!r.ok) throw new Error(`${url}: ${r.status}`);
       return r.json();
     }
+    function shellQuote(p) { return `'${p.replace(/'/g, `'\\''`)}'`; }
+    function deleteUrl(path) { return `https://github.com/${REPO}/delete/${DELETE_BRANCH}/${path}`; }
+    function deepClone(x) { return JSON.parse(JSON.stringify(x)); }
+    function locById(arr, id) { return arr.find((l) => l.id === id); }
 
-    // locations.js builds paths via helpers: `const sf = make('sf');` then `sf('foo.jpg')`.
-    // We parse the helper bindings, then scan every line for `helper('file.ext')` calls
-    // to assemble `images/<dir>/<file>` regardless of whether the line is commented.
-    function classifyFromLocations(src) {
-      const status = new Map();
+    // Parse locations.js to extract: helpers (id -> folder dir), and for each
+    // location object, its id/name/lat/lng/photos[] (both active and commented).
+    // Returns { activeLocations, status } where activeLocations is the include list
+    // and status is path->'included'|'excluded' (commented).
+    function parseLocations(src) {
       const helpers = {};
-      const helperRe = /^\s*const\s+(\w+)\s*=\s*make\(\s*['"`]([^'"`]+)['"`]\s*\)/;
       for (const line of src.split('\n')) {
-        const hm = line.match(helperRe);
+        const hm = line.match(/^\s*const\s+(\w+)\s*=\s*make\(\s*['"`]([^'"`]+)['"`]\s*\)/);
         if (hm) helpers[hm[1]] = hm[2];
       }
       const names = Object.keys(helpers);
-      if (names.length === 0) return status;
-      const callRe = new RegExp(`\\b(${names.join('|')})\\(\\s*['"\`]([^'"\`]+)['"\`]`, 'g');
-      for (const line of src.split('\n')) {
-        const commented = line.trim().startsWith('//');
-        let m;
-        while ((m = callRe.exec(line)) !== null) {
-          const path = `images/${helpers[m[1]]}/${m[2]}`;
-          const prev = status.get(path);
-          if (prev === 'included') continue;
-          status.set(path, commented ? 'excluded' : 'included');
+      const callRe = names.length
+        ? new RegExp(`\\b(${names.join('|')})\\(\\s*['"\`]([^'"\`]+)['"\`]`, 'g')
+        : null;
+
+      // Status pass: every helper call line, classified by commenting.
+      const status = new Map();
+      if (callRe) {
+        for (const line of src.split('\n')) {
+          const commented = line.trim().startsWith('//');
+          let m;
+          while ((m = callRe.exec(line)) !== null) {
+            const path = `images/${helpers[m[1]]}/${m[2]}`;
+            const prev = status.get(path);
+            if (prev === 'included') continue;
+            status.set(path, commented ? 'excluded' : 'included');
+          }
         }
       }
-      return status;
+
+      // Locations pass: split by `{ id: '...' ... },` blocks. We scan for the
+      // start of each location entry inside the exported array and extract the
+      // listed photos (uncommented only, since those are the live ones).
+      const locations = [];
+      const blockRe = /\{\s*id:\s*['"`]([^'"`]+)['"`][\s\S]*?\n\s*\},/g;
+      let bm;
+      while ((bm = blockRe.exec(src)) !== null) {
+        const block = bm[0];
+        const id = bm[1];
+        const nameMatch = block.match(/name:\s*['"`]([^'"`]+)['"`]/);
+        const latMatch = block.match(/lat:\s*(-?\d+(?:\.\d+)?)/);
+        const lngMatch = block.match(/lng:\s*(-?\d+(?:\.\d+)?)/);
+        const photos = [];
+        if (callRe) {
+          for (const line of block.split('\n')) {
+            if (line.trim().startsWith('//')) continue;
+            let m2;
+            callRe.lastIndex = 0;
+            while ((m2 = callRe.exec(line)) !== null) {
+              photos.push(`images/${helpers[m2[1]]}/${m2[2]}`);
+            }
+          }
+        }
+        locations.push({
+          id,
+          name: nameMatch ? nameMatch[1] : id,
+          lat: latMatch ? Number(latMatch[1]) : 0,
+          lng: lngMatch ? Number(lngMatch[1]) : 0,
+          photos,
+        });
+      }
+      return { activeLocations: locations, status };
     }
 
     function groupByFolder(files) {
@@ -142,36 +249,35 @@
       return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
     }
 
-    function loadMarked() {
-      try { return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')); }
-      catch { return new Set(); }
+    // ---------- scrub mode ----------
+    function loadScrub() {
+      try { scrubMarked = new Set(JSON.parse(localStorage.getItem(SCRUB_KEY) || '[]')); }
+      catch { scrubMarked = new Set(); }
     }
-    function saveMarked(set) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...set]));
-    }
-
-    function shellQuote(p) {
-      // Wrap in single quotes; escape any single quote inside.
-      return `'${p.replace(/'/g, `'\\''`)}'`;
+    function saveScrub() {
+      localStorage.setItem(SCRUB_KEY, JSON.stringify([...scrubMarked]));
     }
 
-    function render(files, status, marked) {
+    function renderScrub() {
       const main = document.getElementById('main');
       main.innerHTML = '';
-      const groups = groupByFolder(files);
+      const groups = groupByFolder(manifest);
       for (const [folder, list] of groups) {
         const section = document.createElement('section');
         section.className = 'group';
+        const head = document.createElement('div');
+        head.className = 'group-head';
         const h2 = document.createElement('h2');
         h2.textContent = `${folder} — ${list.length}`;
-        section.appendChild(h2);
+        head.appendChild(h2);
+        section.appendChild(head);
         const grid = document.createElement('div');
         grid.className = 'grid';
         for (const path of list) {
+          const s = locStatus.get(path) || 'orphaned';
           const tile = document.createElement('div');
-          const s = status.get(path) || 'orphaned';
           tile.className = `tile ${s}`;
-          if (marked.has(path)) tile.classList.add('marked');
+          if (scrubMarked.has(path)) tile.classList.add('marked');
           tile.dataset.path = path;
           tile.innerHTML = `
             <img src="${path}" loading="lazy" alt="">
@@ -179,10 +285,10 @@
             <div class="caption">${path.split('/').pop()}</div>
           `;
           tile.addEventListener('click', () => {
-            if (marked.has(path)) marked.delete(path); else marked.add(path);
+            if (scrubMarked.has(path)) scrubMarked.delete(path); else scrubMarked.add(path);
             tile.classList.toggle('marked');
-            saveMarked(marked);
-            updatePanel(marked);
+            saveScrub();
+            updateScrubPanel();
           });
           grid.appendChild(tile);
         }
@@ -191,70 +297,62 @@
       }
     }
 
-    const REPO = 'rohansonecha/rohansonecha.github.io';
-    const DELETE_BRANCH = 'main';
-
-    function deleteUrl(path) {
-      return `https://github.com/${REPO}/delete/${DELETE_BRANCH}/${path}`;
-    }
-
-    function issueUrl(paths) {
+    function scrubIssueUrl(paths) {
       const title = `Scrub ${paths.length} photo${paths.length === 1 ? '' : 's'}`;
       const body = [
         '@claude please scrub these photos.',
         '',
-        'For each path below: delete the image file from the repo, remove its entry from `locations.js`, then regenerate `images-manifest.json` (run `./regen-manifest.sh`). Do everything in a single commit on `main`.',
+        'Delete each image file, remove its entry from `locations.js`, then regenerate `images-manifest.json` (run `./regen-manifest.sh`). Single commit on `main`.',
         '',
         ...paths.map((p) => `- ${p}`),
         '',
-        '_(Filed from /debug.html)_',
+        '_(Filed from /debug.html — Scrub mode)_',
       ].join('\n');
       return `https://github.com/${REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
     }
 
-    function updatePanel(marked) {
-      const arr = [...marked].sort();
-      document.getElementById('count').textContent = `${arr.length} marked`;
-      const list = document.getElementById('panellist');
-      const perfile = document.getElementById('perfile');
+    function updateScrubPanel() {
+      const arr = [...scrubMarked].sort();
+      document.getElementById('scrub-count').textContent = `${arr.length} marked`;
+      const list = document.getElementById('scrub-list');
+      const perfile = document.getElementById('scrub-perfile');
       if (arr.length === 0) {
-        list.innerHTML = `<em style="color:#888;font-size:0.85rem;">Tap photos above to mark them for deletion.</em>`;
+        list.innerHTML = `<em style="color:#888;">Tap photos above to mark them for deletion.</em>`;
         perfile.innerHTML = '';
       } else {
-        const plain = document.createElement('ul');
-        const links = document.createElement('ul');
-        for (const path of arr) {
+        const ul = document.createElement('ul');
+        const ul2 = document.createElement('ul');
+        for (const p of arr) {
           const li = document.createElement('li');
-          const span = document.createElement('span');
-          span.className = 'path';
-          span.textContent = path;
-          li.appendChild(span);
-          plain.appendChild(li);
+          const sp = document.createElement('span');
+          sp.className = 'path';
+          sp.textContent = p;
+          li.appendChild(sp);
+          ul.appendChild(li);
 
           const li2 = document.createElement('li');
-          const span2 = document.createElement('span');
-          span2.className = 'path';
-          span2.textContent = path;
+          const sp2 = document.createElement('span');
+          sp2.className = 'path';
+          sp2.textContent = p;
           const a = document.createElement('a');
-          a.href = deleteUrl(path);
+          a.href = deleteUrl(p);
           a.target = '_blank';
           a.rel = 'noopener';
           a.textContent = 'Delete on GitHub →';
-          li2.appendChild(span2);
+          li2.appendChild(sp2);
           li2.appendChild(a);
-          links.appendChild(li2);
+          ul2.appendChild(li2);
         }
         list.innerHTML = '';
-        list.appendChild(plain);
+        list.appendChild(ul);
         perfile.innerHTML = '';
-        perfile.appendChild(links);
+        perfile.appendChild(ul2);
       }
-      const cmd = arr.length ? `git rm ${arr.map(shellQuote).join(' ')}` : '';
-      document.getElementById('rmcmd').value = cmd;
-      document.getElementById('copy').disabled = arr.length === 0;
-      const submit = document.getElementById('submit');
+      document.getElementById('scrub-rmcmd').value = arr.length ? `git rm ${arr.map(shellQuote).join(' ')}` : '';
+      document.getElementById('scrub-copy').disabled = arr.length === 0;
+      const submit = document.getElementById('scrub-submit');
       if (arr.length) {
-        submit.href = issueUrl(arr);
+        submit.href = scrubIssueUrl(arr);
         submit.setAttribute('aria-disabled', 'false');
       } else {
         submit.removeAttribute('href');
@@ -262,50 +360,400 @@
       }
     }
 
-    function updateSummary(files, status, marked) {
-      let included = 0, excluded = 0, orphaned = 0;
-      for (const f of files) {
-        const s = status.get(f) || 'orphaned';
-        if (s === 'included') included++;
-        else if (s === 'excluded') excluded++;
-        else orphaned++;
+    // ---------- organize mode ----------
+    function loadOrganize() {
+      let baseStored = null;
+      try { baseStored = JSON.parse(localStorage.getItem(ORG_BASE_KEY) || 'null'); } catch {}
+      const currentBase = JSON.stringify(originalLocations);
+      if (baseStored !== currentBase) {
+        // Originals changed since last draft was saved — reset.
+        draft = deepClone(originalLocations);
+        localStorage.setItem(ORG_BASE_KEY, currentBase);
+        localStorage.setItem(ORG_KEY, JSON.stringify(draft));
+        if (baseStored !== null) {
+          showBanner('locations.js changed since your last edit. Organize draft was reset.');
+        }
+        return;
       }
-      document.getElementById('summary').textContent =
-        `${files.length} files on disk — ${included} included, ${excluded} commented out, ${orphaned} orphaned. ${marked.size} marked.`;
+      try {
+        const stored = JSON.parse(localStorage.getItem(ORG_KEY) || 'null');
+        draft = stored ?? deepClone(originalLocations);
+      } catch {
+        draft = deepClone(originalLocations);
+      }
+    }
+    function saveOrganize() {
+      localStorage.setItem(ORG_KEY, JSON.stringify(draft));
+    }
+    function resetOrganize() {
+      draft = deepClone(originalLocations);
+      selectedPhotos.clear();
+      saveOrganize();
+      renderOrganize();
+      updateOrganizePanel();
     }
 
+    function showBanner(msg) {
+      const b = document.getElementById('banner');
+      b.innerHTML = `<div class="banner">${msg}</div>`;
+    }
+
+    function renderOrganize() {
+      const main = document.getElementById('main');
+      main.innerHTML = '';
+      for (const loc of draft) {
+        const section = document.createElement('section');
+        section.className = 'group';
+        section.dataset.locId = loc.id;
+
+        const head = document.createElement('div');
+        head.className = 'group-head';
+
+        const left = document.createElement('div');
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.value = loc.name;
+        nameInput.addEventListener('change', () => {
+          loc.name = nameInput.value.trim() || loc.id;
+          saveOrganize();
+          updateOrganizePanel();
+        });
+        const meta = document.createElement('span');
+        meta.className = 'meta';
+        meta.textContent = ` · ${loc.id} · `;
+        const latInput = document.createElement('input');
+        latInput.type = 'text'; latInput.inputMode = 'decimal'; latInput.className = 'coord';
+        latInput.value = loc.lat;
+        latInput.addEventListener('change', () => {
+          const v = Number(latInput.value);
+          if (Number.isFinite(v)) { loc.lat = v; saveOrganize(); updateOrganizePanel(); }
+          else latInput.value = loc.lat;
+        });
+        const lngInput = document.createElement('input');
+        lngInput.type = 'text'; lngInput.inputMode = 'decimal'; lngInput.className = 'coord';
+        lngInput.value = loc.lng;
+        lngInput.addEventListener('change', () => {
+          const v = Number(lngInput.value);
+          if (Number.isFinite(v)) { loc.lng = v; saveOrganize(); updateOrganizePanel(); }
+          else lngInput.value = loc.lng;
+        });
+        left.appendChild(nameInput);
+        left.appendChild(meta);
+        left.appendChild(latInput);
+        left.appendChild(document.createTextNode(' , '));
+        left.appendChild(lngInput);
+        head.appendChild(left);
+
+        const actions = document.createElement('div');
+        actions.className = 'group-actions';
+        const mergeSel = document.createElement('select');
+        mergeSel.innerHTML = `<option value="">Merge into…</option>` +
+          draft.filter((d) => d.id !== loc.id).map((d) => `<option value="${d.id}">${d.name}</option>`).join('');
+        mergeSel.addEventListener('change', () => {
+          const targetId = mergeSel.value;
+          if (!targetId) return;
+          const target = locById(draft, targetId);
+          if (!target) return;
+          target.photos.push(...loc.photos);
+          const idx = draft.indexOf(loc);
+          draft.splice(idx, 1);
+          for (const p of loc.photos) selectedPhotos.delete(p);
+          saveOrganize();
+          renderOrganize();
+          updateOrganizePanel();
+        });
+        const delBtn = document.createElement('button');
+        delBtn.className = 'danger';
+        delBtn.textContent = `Delete location (${loc.photos.length})`;
+        delBtn.addEventListener('click', () => {
+          if (!confirm(`Remove location "${loc.name}" and unlink its ${loc.photos.length} photo(s)?\n\n(Files stay on disk — use Scrub mode to delete them.)`)) return;
+          const idx = draft.indexOf(loc);
+          draft.splice(idx, 1);
+          for (const p of loc.photos) selectedPhotos.delete(p);
+          saveOrganize();
+          renderOrganize();
+          updateOrganizePanel();
+        });
+        actions.appendChild(mergeSel);
+        actions.appendChild(delBtn);
+        head.appendChild(actions);
+        section.appendChild(head);
+
+        const grid = document.createElement('div');
+        grid.className = 'grid';
+        for (const path of loc.photos) {
+          const tile = document.createElement('div');
+          tile.className = 'tile';
+          if (selectedPhotos.has(path)) tile.classList.add('selected');
+          if (!manifest.includes(path)) tile.classList.add('orphaned');
+          tile.innerHTML = `
+            <img src="${path}" loading="lazy" alt="">
+            <div class="caption">${path.split('/').pop()}</div>
+          `;
+          tile.addEventListener('click', () => {
+            if (selectedPhotos.has(path)) selectedPhotos.delete(path);
+            else selectedPhotos.add(path);
+            tile.classList.toggle('selected');
+            updateOrganizePanel();
+          });
+          grid.appendChild(tile);
+        }
+        section.appendChild(grid);
+        main.appendChild(section);
+      }
+    }
+
+    function buildChangePlan() {
+      const ops = [];
+      const origById = new Map(originalLocations.map((l) => [l.id, l]));
+      const draftById = new Map(draft.map((l) => [l.id, l]));
+
+      // Where does each photo currently live in originals vs draft?
+      const origLocOf = new Map();
+      for (const l of originalLocations) for (const p of l.photos) origLocOf.set(p, l.id);
+      const draftLocOf = new Map();
+      for (const l of draft) for (const p of l.photos) draftLocOf.set(p, l.id);
+
+      // Created / renamed / coord-changed locations.
+      for (const l of draft) {
+        const o = origById.get(l.id);
+        if (!o) {
+          ops.push({ type: 'create', loc: l });
+        } else {
+          if (o.name !== l.name) ops.push({ type: 'rename', id: l.id, from: o.name, to: l.name });
+          if (Number(o.lat) !== Number(l.lat) || Number(o.lng) !== Number(l.lng)) {
+            ops.push({ type: 'coords', id: l.id, from: { lat: o.lat, lng: o.lng }, to: { lat: l.lat, lng: l.lng } });
+          }
+        }
+      }
+      // Deleted locations.
+      for (const o of originalLocations) {
+        if (!draftById.has(o.id)) ops.push({ type: 'delete', id: o.id, name: o.name });
+      }
+      // Moved photos.
+      const moves = [];
+      for (const [p, draftId] of draftLocOf) {
+        const origId = origLocOf.get(p);
+        if (origId && origId !== draftId) moves.push({ photo: p, from: origId, to: draftId });
+      }
+      // Dropped photos (no longer in any location).
+      const dropped = [];
+      for (const [p, origId] of origLocOf) {
+        if (!draftLocOf.has(p)) dropped.push({ photo: p, from: origId });
+      }
+      if (moves.length) ops.push({ type: 'move', moves });
+      if (dropped.length) ops.push({ type: 'drop', dropped });
+      return ops;
+    }
+
+    function describePlan(ops) {
+      if (!ops.length) return [];
+      const lines = [];
+      for (const op of ops) {
+        if (op.type === 'create') {
+          lines.push(`- **Create location** "${op.loc.name}" (id: \`${op.loc.id}\`, lat ${op.loc.lat}, lng ${op.loc.lng}) with ${op.loc.photos.length} photo(s).`);
+        } else if (op.type === 'rename') {
+          lines.push(`- **Rename** \`${op.id}\`: "${op.from}" → "${op.to}".`);
+        } else if (op.type === 'coords') {
+          lines.push(`- **Update coords** for \`${op.id}\`: (${op.from.lat}, ${op.from.lng}) → (${op.to.lat}, ${op.to.lng}).`);
+        } else if (op.type === 'delete') {
+          lines.push(`- **Remove location** \`${op.id}\` ("${op.name}") from locations.js.`);
+        } else if (op.type === 'move') {
+          for (const m of op.moves) lines.push(`- **Move** \`${m.photo}\` from \`${m.from}\` → \`${m.to}\`.`);
+        } else if (op.type === 'drop') {
+          for (const d of op.dropped) lines.push(`- **Unlink** \`${d.photo}\` from \`${d.from}\` (no longer in any location).`);
+        }
+      }
+      return lines;
+    }
+
+    function organizeIssueUrl(ops) {
+      const title = `Reorganize photos (${ops.length} change set${ops.length === 1 ? '' : 's'})`;
+      const planLines = describePlan(ops);
+      const body = [
+        '@claude please apply these locations.js changes.',
+        '',
+        '## Plan',
+        ...planLines,
+        '',
+        '## Desired final state',
+        '',
+        'Below is the full intended locations array (id, name, lat, lng, photos). Use this as the source of truth and update `locations.js` to match. Generate any missing `make()` helpers for new folders. Single commit on `main`.',
+        '',
+        '```json',
+        JSON.stringify(draft, null, 2),
+        '```',
+        '',
+        '_(Filed from /debug.html — Organize mode)_',
+      ].join('\n');
+      return `https://github.com/${REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+    }
+
+    function updateOrganizePanel() {
+      const sel = [...selectedPhotos];
+      document.getElementById('org-count').textContent = `${sel.length} selected`;
+      const moveTarget = document.getElementById('org-move-target');
+      const prev = moveTarget.value;
+      moveTarget.innerHTML = `<option value="">Move to…</option>` +
+        draft.map((l) => `<option value="${l.id}">${l.name}</option>`).join('');
+      if ([...moveTarget.options].some((o) => o.value === prev)) moveTarget.value = prev;
+      document.getElementById('org-move-go').disabled = sel.length === 0 || !moveTarget.value;
+
+      const ops = buildChangePlan();
+      const list = document.getElementById('org-changes');
+      if (!ops.length) {
+        list.innerHTML = `<em style="color:#888;">No pending changes.</em>`;
+      } else {
+        const lines = describePlan(ops);
+        list.innerHTML = '<ul>' + lines.map((l) => `<li>${l.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')}</li>`).join('') + '</ul>';
+      }
+      const submit = document.getElementById('org-submit');
+      if (ops.length) {
+        submit.href = organizeIssueUrl(ops);
+        submit.setAttribute('aria-disabled', 'false');
+      } else {
+        submit.removeAttribute('href');
+        submit.setAttribute('aria-disabled', 'true');
+      }
+    }
+
+    function doMoveSelected() {
+      const targetId = document.getElementById('org-move-target').value;
+      if (!targetId || !selectedPhotos.size) return;
+      const target = locById(draft, targetId);
+      if (!target) return;
+      for (const p of [...selectedPhotos]) {
+        for (const l of draft) {
+          const i = l.photos.indexOf(p);
+          if (i >= 0) l.photos.splice(i, 1);
+        }
+        if (!target.photos.includes(p)) target.photos.push(p);
+      }
+      selectedPhotos.clear();
+      saveOrganize();
+      renderOrganize();
+      updateOrganizePanel();
+    }
+
+    function showNewLocForm() {
+      const wrap = document.getElementById('new-loc-wrap');
+      wrap.hidden = false;
+      wrap.innerHTML = `
+        <div class="new-loc">
+          <h3>New location</h3>
+          <input id="nl-name" placeholder="Display name (e.g. Guatemala)" />
+          <input id="nl-id" placeholder="id (e.g. guatemala)" />
+          <input id="nl-lat" inputmode="decimal" placeholder="lat" style="width:6rem" />
+          <input id="nl-lng" inputmode="decimal" placeholder="lng" style="width:6rem" />
+          <button id="nl-add">Add</button>
+          <button id="nl-cancel" style="background:transparent;color:#555;border:1px solid #ccc;">Cancel</button>
+        </div>
+      `;
+      document.getElementById('nl-cancel').addEventListener('click', () => { wrap.hidden = true; wrap.innerHTML = ''; });
+      document.getElementById('nl-add').addEventListener('click', () => {
+        const name = document.getElementById('nl-name').value.trim();
+        const id = document.getElementById('nl-id').value.trim().toLowerCase().replace(/\s+/g, '-');
+        const lat = Number(document.getElementById('nl-lat').value);
+        const lng = Number(document.getElementById('nl-lng').value);
+        if (!name || !id) return alert('name and id are required');
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return alert('valid lat/lng required');
+        if (locById(draft, id)) return alert(`id "${id}" already exists`);
+        draft.push({ id, name, lat, lng, photos: [] });
+        saveOrganize();
+        wrap.hidden = true; wrap.innerHTML = '';
+        renderOrganize();
+        updateOrganizePanel();
+      });
+    }
+
+    // ---------- mode switching ----------
+    function setMode(next) {
+      mode = next;
+      document.getElementById('mode-scrub').classList.toggle('active', mode === 'scrub');
+      document.getElementById('mode-organize').classList.toggle('active', mode === 'organize');
+      document.getElementById('panel-scrub').hidden = mode !== 'scrub';
+      document.getElementById('panel-organize').hidden = mode !== 'organize';
+      const legend = document.getElementById('legend');
+      if (mode === 'scrub') {
+        legend.innerHTML = `
+          <span class="included">included in locations.js</span>
+          <span class="excluded">commented out</span>
+          <span class="orphaned">orphaned on disk</span>
+          <span class="marked">marked for deletion</span>
+        `;
+        renderScrub();
+        updateScrubPanel();
+      } else {
+        legend.innerHTML = `
+          <span class="selected">selected (to move)</span>
+          <span class="orphaned">photo file missing from disk</span>
+        `;
+        renderOrganize();
+        updateOrganizePanel();
+      }
+    }
+
+    // ---------- init ----------
     (async () => {
       const [files, locSrc] = await Promise.all([
         loadJson('images-manifest.json'),
         loadText('locations.js'),
       ]);
-      const status = classifyFromLocations(locSrc);
-      const marked = loadMarked();
-      // Drop any previously-marked entries that are no longer on disk.
-      for (const m of [...marked]) if (!files.includes(m)) marked.delete(m);
-      saveMarked(marked);
+      manifest = files;
+      const parsed = parseLocations(locSrc);
+      originalLocations = parsed.activeLocations;
+      locStatus = parsed.status;
 
-      render(files, status, marked);
-      updateSummary(files, status, marked);
-      updatePanel(marked);
+      loadScrub();
+      // Drop marked entries no longer on disk.
+      for (const m of [...scrubMarked]) if (!manifest.includes(m)) scrubMarked.delete(m);
+      saveScrub();
 
-      document.getElementById('copy').addEventListener('click', () => {
-        const paths = [...marked].sort().join('\n');
-        navigator.clipboard.writeText(paths).catch(() => {
-          const ta = document.getElementById('rmcmd');
-          ta.select();
-          document.execCommand('copy');
+      loadOrganize();
+
+      let included = 0, excluded = 0, orphaned = 0;
+      for (const f of manifest) {
+        const s = locStatus.get(f) || 'orphaned';
+        if (s === 'included') included++;
+        else if (s === 'excluded') excluded++;
+        else orphaned++;
+      }
+      document.getElementById('summary').textContent =
+        `${manifest.length} files on disk · ${included} included · ${excluded} commented out · ${orphaned} orphaned · ${originalLocations.length} locations.`;
+
+      // Buttons
+      document.getElementById('mode-scrub').addEventListener('click', () => setMode('scrub'));
+      document.getElementById('mode-organize').addEventListener('click', () => setMode('organize'));
+
+      document.getElementById('scrub-copy').addEventListener('click', () => {
+        const text = [...scrubMarked].sort().join('\n');
+        navigator.clipboard.writeText(text).catch(() => {
+          const ta = document.getElementById('scrub-rmcmd');
+          ta.select(); document.execCommand('copy');
         });
       });
-      document.getElementById('clear').addEventListener('click', () => {
-        marked.clear();
-        saveMarked(marked);
+      document.getElementById('scrub-clear').addEventListener('click', () => {
+        scrubMarked.clear(); saveScrub();
         for (const el of document.querySelectorAll('.tile.marked')) el.classList.remove('marked');
-        updatePanel(marked);
-        updateSummary(files, status, marked);
+        updateScrubPanel();
       });
+
+      document.getElementById('org-move-target').addEventListener('change', updateOrganizePanel);
+      document.getElementById('org-move-go').addEventListener('click', doMoveSelected);
+      document.getElementById('org-clear-sel').addEventListener('click', () => {
+        selectedPhotos.clear();
+        for (const el of document.querySelectorAll('.tile.selected')) el.classList.remove('selected');
+        updateOrganizePanel();
+      });
+      document.getElementById('org-new-loc').addEventListener('click', showNewLocForm);
+      document.getElementById('org-reset').addEventListener('click', () => {
+        if (!confirm('Discard the organize draft and revert to current locations.js?')) return;
+        resetOrganize();
+      });
+
+      setMode('scrub');
     })().catch((err) => {
-      document.getElementById('summary').textContent = `Error: ${err.message}. Run ./regen-manifest.sh to generate images-manifest.json.`;
+      document.getElementById('summary').textContent = `Error: ${err.message}`;
     });
   </script>
 </body>
