@@ -57,6 +57,13 @@
     .tile.selected { border-color: var(--pick); box-shadow: 0 0 0 2px var(--pick) inset; }
     .tile.selected::after { content: "✓"; position: absolute; top: 50%; left: 50%;
       transform: translate(-50%, -50%); color: var(--pick); font-size: 2rem; pointer-events: none; }
+    .tile-reorder { position: absolute; top: 4px; right: 4px; display: flex; gap: 2px;
+      background: rgba(255,255,255,0.85); border-radius: 2px; padding: 2px; }
+    .tile-reorder button { width: 28px; height: 28px; padding: 0; margin: 0; border: none;
+      background: transparent; cursor: pointer; font: inherit; font-size: 0.85rem; line-height: 1;
+      color: #000; display: flex; align-items: center; justify-content: center; }
+    .tile-reorder button:disabled { color: #ccc; cursor: default; }
+    .tile-reorder button:not(:disabled):active { background: rgba(0,0,0,0.1); }
 
     .panel { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #ddd;
       padding: 0.6rem 0.9rem; box-shadow: 0 -4px 12px rgba(0,0,0,0.05); max-height: 55vh; display: flex;
@@ -481,7 +488,7 @@
 
         const grid = document.createElement('div');
         grid.className = 'grid';
-        for (const path of loc.photos) {
+        loc.photos.forEach((path, idx) => {
           const tile = document.createElement('div');
           tile.className = 'tile';
           if (selectedPhotos.has(path)) tile.classList.add('selected');
@@ -490,6 +497,22 @@
             <img src="${path}" loading="lazy" alt="">
             <div class="caption">${path.split('/').pop()}</div>
           `;
+          const bar = document.createElement('div');
+          bar.className = 'tile-reorder';
+          const last = loc.photos.length - 1;
+          const mkBtn = (label, title, disabled, fn) => {
+            const b = document.createElement('button');
+            b.textContent = label;
+            b.title = title;
+            b.disabled = disabled;
+            b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+            return b;
+          };
+          bar.appendChild(mkBtn('⤒', 'Move to top', idx === 0, () => reorderPhoto(loc, idx, 0)));
+          bar.appendChild(mkBtn('↑', 'Move up', idx === 0, () => reorderPhoto(loc, idx, idx - 1)));
+          bar.appendChild(mkBtn('↓', 'Move down', idx === last, () => reorderPhoto(loc, idx, idx + 1)));
+          bar.appendChild(mkBtn('⤓', 'Move to bottom', idx === last, () => reorderPhoto(loc, idx, last)));
+          tile.appendChild(bar);
           tile.addEventListener('click', () => {
             if (selectedPhotos.has(path)) selectedPhotos.delete(path);
             else selectedPhotos.add(path);
@@ -497,7 +520,7 @@
             updateOrganizePanel();
           });
           grid.appendChild(tile);
-        }
+        });
         section.appendChild(grid);
         main.appendChild(section);
       }
@@ -543,6 +566,22 @@
       }
       if (moves.length) ops.push({ type: 'move', moves });
       if (dropped.length) ops.push({ type: 'drop', dropped });
+
+      // Reorders: for each location that exists in both, compare the order of
+      // photos that are kept in both. If their relative order differs, emit a
+      // reorder op (independent of moves in/out).
+      for (const l of draft) {
+        const o = origById.get(l.id);
+        if (!o) continue;
+        const origSet = new Set(o.photos);
+        const draftSet = new Set(l.photos);
+        const keptInOrig = o.photos.filter((p) => draftSet.has(p));
+        const keptInDraft = l.photos.filter((p) => origSet.has(p));
+        if (keptInOrig.length === keptInDraft.length &&
+            keptInOrig.some((p, i) => p !== keptInDraft[i])) {
+          ops.push({ type: 'reorder', id: l.id, order: l.photos.slice() });
+        }
+      }
       return ops;
     }
 
@@ -562,6 +601,8 @@
           for (const m of op.moves) lines.push(`- **Move** \`${m.photo}\` from \`${m.from}\` → \`${m.to}\`.`);
         } else if (op.type === 'drop') {
           for (const d of op.dropped) lines.push(`- **Unlink** \`${d.photo}\` from \`${d.from}\` (no longer in any location).`);
+        } else if (op.type === 'reorder') {
+          lines.push(`- **Reorder photos** in \`${op.id}\` (${op.order.length} photo${op.order.length === 1 ? '' : 's'} in new order).`);
         }
       }
       return lines;
@@ -615,6 +656,15 @@
         submit.removeAttribute('href');
         submit.setAttribute('aria-disabled', 'true');
       }
+    }
+
+    function reorderPhoto(loc, fromIdx, toIdx) {
+      if (fromIdx === toIdx) return;
+      const [p] = loc.photos.splice(fromIdx, 1);
+      loc.photos.splice(toIdx, 0, p);
+      saveOrganize();
+      renderOrganize();
+      updateOrganizePanel();
     }
 
     function doMoveSelected() {
