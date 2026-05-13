@@ -100,15 +100,10 @@ export const locations = [
     lat: 44.3386,
     lng: -68.2733,
     photos: [
-      acadia('acadia-collage.jpg'),
-      acadia('acadia-collage-2.jpg'),
-      acadia('acadia-trees.jpg'),
-      acadia('acadia-trees-light.jpg'),
       acadia('colors.jpg'),
       acadia('colors-2.jpg'),
       acadia('colors-3.jpg'),
       acadia('colors-4.jpg'),
-      acadia('rohan-acadia.jpg'),
     ],
   },
   {
