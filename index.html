@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rohan Sonecha</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header>
+    <h1 class="name">Rohan Sonecha</h1>
+  </header>
+  <main>
+    <canvas id="globe"></canvas>
+  </main>
+  <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer">
+    <button class="lightbox-close" aria-label="Close">
+      <svg viewBox="0 0 32 32" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round">
+        <path d="M8 8 L24 24 M24 8 L8 24" />
+      </svg>
+    </button>
+    <button class="lightbox-prev" aria-label="Previous photo">
+      <svg viewBox="0 0 32 32" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 8 L12 16 L20 24" />
+      </svg>
+    </button>
+    <button class="lightbox-next" aria-label="Next photo">
+      <svg viewBox="0 0 32 32" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 8 L20 16 L12 24" />
+      </svg>
+    </button>
+    <figure class="lightbox-content">
+      <img class="lightbox-image" alt="">
+      <figcaption class="lightbox-caption">
+        <span class="lightbox-title"></span>
+        <span class="lightbox-counter"></span>
+      </figcaption>
+    </figure>
+  </div>
+  <script type="module" src="globe.js"></script>
+</body>
+</html>
