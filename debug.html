@@ -76,14 +76,16 @@
   <div class="panel">
     <div class="panel-bar">
       <div class="count" id="count">0 marked</div>
-      <button id="clear" class="clear">Clear marks</button>
+      <a id="submit" class="btn" aria-disabled="true" target="_blank" rel="noopener">Request scrub from Claude →</a>
       <button id="copy" disabled>Copy paths</button>
+      <button id="clear" class="clear">Clear marks</button>
     </div>
     <div class="panel-list" id="panellist">
       <em style="color:#888;font-size:0.85rem;">Tap photos above to mark them for deletion.</em>
     </div>
     <details>
-      <summary>Show as copyable list / git rm command</summary>
+      <summary>Other options: per-file GitHub delete / git rm command</summary>
+      <div id="perfile" style="margin: 0.4rem 0;"></div>
       <textarea id="rmcmd" readonly rows="3"></textarea>
     </details>
   </div>
@@ -196,34 +198,68 @@
       return `https://github.com/${REPO}/delete/${DELETE_BRANCH}/${path}`;
     }
 
+    function issueUrl(paths) {
+      const title = `Scrub ${paths.length} photo${paths.length === 1 ? '' : 's'}`;
+      const body = [
+        '@claude please scrub these photos.',
+        '',
+        'For each path below: delete the image file from the repo, remove its entry from `locations.js`, then regenerate `images-manifest.json` (run `./regen-manifest.sh`). Do everything in a single commit on `main`.',
+        '',
+        ...paths.map((p) => `- ${p}`),
+        '',
+        '_(Filed from /debug.html)_',
+      ].join('\n');
+      return `https://github.com/${REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+    }
+
     function updatePanel(marked) {
       const arr = [...marked].sort();
       document.getElementById('count').textContent = `${arr.length} marked`;
       const list = document.getElementById('panellist');
+      const perfile = document.getElementById('perfile');
       if (arr.length === 0) {
         list.innerHTML = `<em style="color:#888;font-size:0.85rem;">Tap photos above to mark them for deletion.</em>`;
+        perfile.innerHTML = '';
       } else {
-        const ul = document.createElement('ul');
+        const plain = document.createElement('ul');
+        const links = document.createElement('ul');
         for (const path of arr) {
           const li = document.createElement('li');
           const span = document.createElement('span');
           span.className = 'path';
           span.textContent = path;
+          li.appendChild(span);
+          plain.appendChild(li);
+
+          const li2 = document.createElement('li');
+          const span2 = document.createElement('span');
+          span2.className = 'path';
+          span2.textContent = path;
           const a = document.createElement('a');
           a.href = deleteUrl(path);
           a.target = '_blank';
           a.rel = 'noopener';
           a.textContent = 'Delete on GitHub →';
-          li.appendChild(span);
-          li.appendChild(a);
-          ul.appendChild(li);
+          li2.appendChild(span2);
+          li2.appendChild(a);
+          links.appendChild(li2);
         }
         list.innerHTML = '';
-        list.appendChild(ul);
+        list.appendChild(plain);
+        perfile.innerHTML = '';
+        perfile.appendChild(links);
       }
       const cmd = arr.length ? `git rm ${arr.map(shellQuote).join(' ')}` : '';
       document.getElementById('rmcmd').value = cmd;
       document.getElementById('copy').disabled = arr.length === 0;
+      const submit = document.getElementById('submit');
+      if (arr.length) {
+        submit.href = issueUrl(arr);
+        submit.setAttribute('aria-disabled', 'false');
+      } else {
+        submit.removeAttribute('href');
+        submit.setAttribute('aria-disabled', 'true');
+      }
     }
 
     function updateSummary(files, status, marked) {
