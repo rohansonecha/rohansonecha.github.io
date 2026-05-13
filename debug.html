@@ -38,15 +38,27 @@
     .tile .status { position: absolute; top: 4px; left: 4px; background: rgba(255,255,255,0.85);
       font-size: 0.65rem; padding: 1px 5px; border-radius: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
     .panel { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #ddd;
-      padding: 0.75rem 1.5rem; box-shadow: 0 -4px 12px rgba(0,0,0,0.05); display: flex; gap: 1rem; align-items: center; }
-    .panel .count { font-family: "Cormorant Garamond", Georgia, serif; font-size: 1.1rem; min-width: 7rem; }
-    .panel textarea { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.75rem; padding: 0.4rem; border: 1px solid #ddd; resize: vertical; min-height: 2.2rem; max-height: 8rem; }
-    .panel button { font-family: inherit; font-size: 0.85rem; padding: 0.4rem 0.8rem; cursor: pointer;
-      background: #000; color: #fff; border: none; }
-    .panel button:disabled { background: #ccc; cursor: default; }
+      padding: 0.75rem 1rem; box-shadow: 0 -4px 12px rgba(0,0,0,0.05); max-height: 55vh; display: flex;
+      flex-direction: column; gap: 0.5rem; }
+    .panel-bar { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+    .panel .count { font-family: "Cormorant Garamond", Georgia, serif; font-size: 1.1rem; min-width: 6rem; }
+    .panel button, .panel a.btn { font-family: inherit; font-size: 0.85rem; padding: 0.4rem 0.7rem;
+      cursor: pointer; background: #000; color: #fff; border: none; text-decoration: none;
+      display: inline-block; }
+    .panel button:disabled, .panel a.btn[aria-disabled="true"] { background: #ccc; cursor: default;
+      pointer-events: none; }
     .panel .clear { background: transparent; color: #555; }
-    main { padding-bottom: 8rem; }
+    .panel-list { overflow-y: auto; border-top: 1px solid #eee; padding-top: 0.4rem; }
+    .panel-list ul { list-style: none; padding: 0; margin: 0; font-size: 0.8rem; }
+    .panel-list li { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+      padding: 0.25rem 0; border-bottom: 1px dotted #eee; }
+    .panel-list .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+    .panel-list a { color: var(--danger); text-decoration: none; white-space: nowrap; font-size: 0.75rem; }
+    .panel-list a:hover { text-decoration: underline; }
+    .panel textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.7rem; padding: 0.4rem; border: 1px solid #ddd; resize: vertical; min-height: 2rem; }
+    details summary { cursor: pointer; font-size: 0.8rem; color: #555; }
+    main { padding-bottom: 60vh; }
   </style>
 </head>
 <body>
@@ -62,10 +74,18 @@
   </div>
   <main id="main"></main>
   <div class="panel">
-    <div class="count" id="count">0 marked</div>
-    <textarea id="rmcmd" readonly placeholder="Click photos above to mark them for deletion. The git rm command will appear here."></textarea>
-    <button id="copy" disabled>Copy</button>
-    <button id="clear" class="clear">Clear</button>
+    <div class="panel-bar">
+      <div class="count" id="count">0 marked</div>
+      <button id="clear" class="clear">Clear marks</button>
+      <button id="copy" disabled>Copy paths</button>
+    </div>
+    <div class="panel-list" id="panellist">
+      <em style="color:#888;font-size:0.85rem;">Tap photos above to mark them for deletion.</em>
+    </div>
+    <details>
+      <summary>Show as copyable list / git rm command</summary>
+      <textarea id="rmcmd" readonly rows="3"></textarea>
+    </details>
   </div>
 
   <script>
@@ -169,12 +189,39 @@
       }
     }
 
+    const REPO = 'rohansonecha/rohansonecha.github.io';
+    const DELETE_BRANCH = 'main';
+
+    function deleteUrl(path) {
+      return `https://github.com/${REPO}/delete/${DELETE_BRANCH}/${path}`;
+    }
+
     function updatePanel(marked) {
       const arr = [...marked].sort();
       document.getElementById('count').textContent = `${arr.length} marked`;
-      const cmd = arr.length
-        ? `git rm ${arr.map(shellQuote).join(' ')}`
-        : '';
+      const list = document.getElementById('panellist');
+      if (arr.length === 0) {
+        list.innerHTML = `<em style="color:#888;font-size:0.85rem;">Tap photos above to mark them for deletion.</em>`;
+      } else {
+        const ul = document.createElement('ul');
+        for (const path of arr) {
+          const li = document.createElement('li');
+          const span = document.createElement('span');
+          span.className = 'path';
+          span.textContent = path;
+          const a = document.createElement('a');
+          a.href = deleteUrl(path);
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.textContent = 'Delete on GitHub →';
+          li.appendChild(span);
+          li.appendChild(a);
+          ul.appendChild(li);
+        }
+        list.innerHTML = '';
+        list.appendChild(ul);
+      }
+      const cmd = arr.length ? `git rm ${arr.map(shellQuote).join(' ')}` : '';
       document.getElementById('rmcmd').value = cmd;
       document.getElementById('copy').disabled = arr.length === 0;
     }
@@ -207,9 +254,12 @@
       updatePanel(marked);
 
       document.getElementById('copy').addEventListener('click', () => {
-        const ta = document.getElementById('rmcmd');
-        ta.select();
-        navigator.clipboard.writeText(ta.value).catch(() => document.execCommand('copy'));
+        const paths = [...marked].sort().join('\n');
+        navigator.clipboard.writeText(paths).catch(() => {
+          const ta = document.getElementById('rmcmd');
+          ta.select();
+          document.execCommand('copy');
+        });
       });
       document.getElementById('clear').addEventListener('click', () => {
         marked.clear();
