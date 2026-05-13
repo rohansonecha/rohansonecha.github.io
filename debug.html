@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Debug — all photos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400&display=swap">
+  <style>
+    :root { --bg: #fff; --fg: #000; --muted: #888; --warn: #b8860b; --danger: #c0392b; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+    header { padding: 1.5rem 2rem 0.5rem; }
+    h1 { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 400; margin: 0 0 0.5rem; font-size: 1.75rem; }
+    .summary { color: var(--muted); font-size: 0.9rem; }
+    .legend { display: flex; gap: 1rem; padding: 0.75rem 2rem; font-size: 0.8rem; color: var(--muted); flex-wrap: wrap; }
+    .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 0.4rem; vertical-align: middle; }
+    .legend .included::before { background: #000; }
+    .legend .excluded::before { background: #ccc; }
+    .legend .orphaned::before { background: var(--warn); }
+    .legend .marked::before { background: var(--danger); }
+    .group { padding: 0.5rem 2rem 2rem; }
+    .group h2 { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 400; font-size: 1.25rem;
+      margin: 1rem 0 0.75rem; border-bottom: 1px solid #eee; padding-bottom: 0.25rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; }
+    .tile { position: relative; cursor: pointer; user-select: none; background: #f6f6f6; border: 2px solid transparent; }
+    .tile img { display: block; width: 100%; height: 180px; object-fit: cover; }
+    .tile .caption { font-size: 0.7rem; padding: 0.3rem 0.4rem; color: #333; word-break: break-all; line-height: 1.2; }
+    .tile.excluded { opacity: 0.55; border-color: #ccc; }
+    .tile.orphaned { border-color: var(--warn); }
+    .tile.marked { border-color: var(--danger); }
+    .tile.marked img { opacity: 0.25; }
+    .tile.marked::after { content: "✕ marked"; position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%); color: var(--danger); font-size: 1.5rem; pointer-events: none;
+      font-family: "Cormorant Garamond", Georgia, serif; }
+    .tile .status { position: absolute; top: 4px; left: 4px; background: rgba(255,255,255,0.85);
+      font-size: 0.65rem; padding: 1px 5px; border-radius: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .panel { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #ddd;
+      padding: 0.75rem 1rem; box-shadow: 0 -4px 12px rgba(0,0,0,0.05); max-height: 55vh; display: flex;
+      flex-direction: column; gap: 0.5rem; }
+    .panel-bar { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+    .panel .count { font-family: "Cormorant Garamond", Georgia, serif; font-size: 1.1rem; min-width: 6rem; }
+    .panel button, .panel a.btn { font-family: inherit; font-size: 0.85rem; padding: 0.4rem 0.7rem;
+      cursor: pointer; background: #000; color: #fff; border: none; text-decoration: none;
+      display: inline-block; }
+    .panel button:disabled, .panel a.btn[aria-disabled="true"] { background: #ccc; cursor: default;
+      pointer-events: none; }
+    .panel .clear { background: transparent; color: #555; }
+    .panel-list { overflow-y: auto; border-top: 1px solid #eee; padding-top: 0.4rem; }
+    .panel-list ul { list-style: none; padding: 0; margin: 0; font-size: 0.8rem; }
+    .panel-list li { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+      padding: 0.25rem 0; border-bottom: 1px dotted #eee; }
+    .panel-list .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+    .panel-list a { color: var(--danger); text-decoration: none; white-space: nowrap; font-size: 0.75rem; }
+    .panel-list a:hover { text-decoration: underline; }
+    .panel textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.7rem; padding: 0.4rem; border: 1px solid #ddd; resize: vertical; min-height: 2rem; }
+    details summary { cursor: pointer; font-size: 0.8rem; color: #555; }
+    main { padding-bottom: 60vh; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Photo debug</h1>
+    <div class="summary" id="summary">Loading…</div>
+  </header>
+  <div class="legend">
+    <span class="included">included in locations.js</span>
+    <span class="excluded">commented out</span>
+    <span class="orphaned">orphaned on disk</span>
+    <span class="marked">marked for deletion</span>
+  </div>
+  <main id="main"></main>
+  <div class="panel">
+    <div class="panel-bar">
+      <div class="count" id="count">0 marked</div>
+      <button id="clear" class="clear">Clear marks</button>
+      <button id="copy" disabled>Copy paths</button>
+    </div>
+    <div class="panel-list" id="panellist">
+      <em style="color:#888;font-size:0.85rem;">Tap photos above to mark them for deletion.</em>
+    </div>
+    <details>
+      <summary>Show as copyable list / git rm command</summary>
+      <textarea id="rmcmd" readonly rows="3"></textarea>
+    </details>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'debug-marked-photos';
+
+    async function loadText(url) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`${url}: ${r.status}`);
+      return r.text();
+    }
+    async function loadJson(url) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`${url}: ${r.status}`);
+      return r.json();
+    }
+
+    // locations.js builds paths via helpers: `const sf = make('sf');` then `sf('foo.jpg')`.
+    // We parse the helper bindings, then scan every line for `helper('file.ext')` calls
+    // to assemble `images/<dir>/<file>` regardless of whether the line is commented.
+    function classifyFromLocations(src) {
+      const status = new Map();
+      const helpers = {};
+      const helperRe = /^\s*const\s+(\w+)\s*=\s*make\(\s*['"`]([^'"`]+)['"`]\s*\)/;
+      for (const line of src.split('\n')) {
+        const hm = line.match(helperRe);
+        if (hm) helpers[hm[1]] = hm[2];
+      }
+      const names = Object.keys(helpers);
+      if (names.length === 0) return status;
+      const callRe = new RegExp(`\\b(${names.join('|')})\\(\\s*['"\`]([^'"\`]+)['"\`]`, 'g');
+      for (const line of src.split('\n')) {
+        const commented = line.trim().startsWith('//');
+        let m;
+        while ((m = callRe.exec(line)) !== null) {
+          const path = `images/${helpers[m[1]]}/${m[2]}`;
+          const prev = status.get(path);
+          if (prev === 'included') continue;
+          status.set(path, commented ? 'excluded' : 'included');
+        }
+      }
+      return status;
+    }
+
+    function groupByFolder(files) {
+      const groups = new Map();
+      for (const f of files) {
+        const parts = f.split('/');
+        const folder = parts.length >= 3 ? parts[1] : '(root)';
+        if (!groups.has(folder)) groups.set(folder, []);
+        groups.get(folder).push(f);
+      }
+      return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    }
+
+    function loadMarked() {
+      try { return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')); }
+      catch { return new Set(); }
+    }
+    function saveMarked(set) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...set]));
+    }
+
+    function shellQuote(p) {
+      // Wrap in single quotes; escape any single quote inside.
+      return `'${p.replace(/'/g, `'\\''`)}'`;
+    }
+
+    function render(files, status, marked) {
+      const main = document.getElementById('main');
+      main.innerHTML = '';
+      const groups = groupByFolder(files);
+      for (const [folder, list] of groups) {
+        const section = document.createElement('section');
+        section.className = 'group';
+        const h2 = document.createElement('h2');
+        h2.textContent = `${folder} — ${list.length}`;
+        section.appendChild(h2);
+        const grid = document.createElement('div');
+        grid.className = 'grid';
+        for (const path of list) {
+          const tile = document.createElement('div');
+          const s = status.get(path) || 'orphaned';
+          tile.className = `tile ${s}`;
+          if (marked.has(path)) tile.classList.add('marked');
+          tile.dataset.path = path;
+          tile.innerHTML = `
+            <img src="${path}" loading="lazy" alt="">
+            <div class="status">${s}</div>
+            <div class="caption">${path.split('/').pop()}</div>
+          `;
+          tile.addEventListener('click', () => {
+            if (marked.has(path)) marked.delete(path); else marked.add(path);
+            tile.classList.toggle('marked');
+            saveMarked(marked);
+            updatePanel(marked);
+          });
+          grid.appendChild(tile);
+        }
+        section.appendChild(grid);
+        main.appendChild(section);
+      }
+    }
+
+    const REPO = 'rohansonecha/rohansonecha.github.io';
+    const DELETE_BRANCH = 'main';
+
+    function deleteUrl(path) {
+      return `https://github.com/${REPO}/delete/${DELETE_BRANCH}/${path}`;
+    }
+
+    function updatePanel(marked) {
+      const arr = [...marked].sort();
+      document.getElementById('count').textContent = `${arr.length} marked`;
+      const list = document.getElementById('panellist');
+      if (arr.length === 0) {
+        list.innerHTML = `<em style="color:#888;font-size:0.85rem;">Tap photos above to mark them for deletion.</em>`;
+      } else {
+        const ul = document.createElement('ul');
+        for (const path of arr) {
+          const li = document.createElement('li');
+          const span = document.createElement('span');
+          span.className = 'path';
+          span.textContent = path;
+          const a = document.createElement('a');
+          a.href = deleteUrl(path);
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.textContent = 'Delete on GitHub →';
+          li.appendChild(span);
+          li.appendChild(a);
+          ul.appendChild(li);
+        }
+        list.innerHTML = '';
+        list.appendChild(ul);
+      }
+      const cmd = arr.length ? `git rm ${arr.map(shellQuote).join(' ')}` : '';
+      document.getElementById('rmcmd').value = cmd;
+      document.getElementById('copy').disabled = arr.length === 0;
+    }
+
+    function updateSummary(files, status, marked) {
+      let included = 0, excluded = 0, orphaned = 0;
+      for (const f of files) {
+        const s = status.get(f) || 'orphaned';
+        if (s === 'included') included++;
+        else if (s === 'excluded') excluded++;
+        else orphaned++;
+      }
+      document.getElementById('summary').textContent =
+        `${files.length} files on disk — ${included} included, ${excluded} commented out, ${orphaned} orphaned. ${marked.size} marked.`;
+    }
+
+    (async () => {
+      const [files, locSrc] = await Promise.all([
+        loadJson('images-manifest.json'),
+        loadText('locations.js'),
+      ]);
+      const status = classifyFromLocations(locSrc);
+      const marked = loadMarked();
+      // Drop any previously-marked entries that are no longer on disk.
+      for (const m of [...marked]) if (!files.includes(m)) marked.delete(m);
+      saveMarked(marked);
+
+      render(files, status, marked);
+      updateSummary(files, status, marked);
+      updatePanel(marked);
+
+      document.getElementById('copy').addEventListener('click', () => {
+        const paths = [...marked].sort().join('\n');
+        navigator.clipboard.writeText(paths).catch(() => {
+          const ta = document.getElementById('rmcmd');
+          ta.select();
+          document.execCommand('copy');
+        });
+      });
+      document.getElementById('clear').addEventListener('click', () => {
+        marked.clear();
+        saveMarked(marked);
+        for (const el of document.querySelectorAll('.tile.marked')) el.classList.remove('marked');
+        updatePanel(marked);
+        updateSummary(files, status, marked);
+      });
+    })().catch((err) => {
+      document.getElementById('summary').textContent = `Error: ${err.message}. Run ./regen-manifest.sh to generate images-manifest.json.`;
+    });
+  </script>
+</body>
+</html>
