@@ -16,6 +16,16 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
 camera.position.set(0, 0, 2.6);
 
+const MIN_Z = 1.3;
+const MAX_Z = 5;
+
+function zoomCamera(factor) {
+  camera.position.z = THREE.MathUtils.clamp(camera.position.z * factor, MIN_Z, MAX_Z);
+}
+
+document.getElementById('zoom-in')?.addEventListener('click', () => zoomCamera(1 / 1.25));
+document.getElementById('zoom-out')?.addEventListener('click', () => zoomCamera(1.25));
+
 const RADIUS = 1;
 const globe = new THREE.Group();
 globe.scale.setScalar(0.875);
@@ -164,6 +174,16 @@ let prevY = 0;
 let velX = 0;
 let velY = 0;
 
+const activePointers = new Map();
+let pinching = false;
+let pinchStartDist = 0;
+let pinchStartZ = 0;
+
+function pinchDistance() {
+  const pts = [...activePointers.values()];
+  return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+}
+
 function applyRotation(dx, dy) {
   const speed = 0.005;
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * speed);
@@ -181,6 +201,20 @@ function hoverCursor(clientX, clientY) {
 
 canvas.addEventListener('pointerdown', (e) => {
   if (!pointerOnSphere(e.clientX, e.clientY) && !pinAtClient(e.clientX, e.clientY)) return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (activePointers.size >= 2) {
+    pinching = true;
+    dragging = false;
+    pointerStart = null;
+    velX = 0;
+    velY = 0;
+    pinchStartDist = pinchDistance();
+    pinchStartZ = camera.position.z;
+    canvas.style.cursor = 'default';
+    return;
+  }
+
   dragging = true;
   didDrag = false;
   pointerStart = { x: e.clientX, y: e.clientY };
@@ -193,6 +227,18 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 canvas.addEventListener('pointermove', (e) => {
+  if (activePointers.has(e.pointerId)) {
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  }
+
+  if (pinching && activePointers.size >= 2) {
+    const d = pinchDistance();
+    if (pinchStartDist > 0 && d > 0) {
+      camera.position.z = THREE.MathUtils.clamp(pinchStartZ * (pinchStartDist / d), MIN_Z, MAX_Z);
+    }
+    return;
+  }
+
   if (dragging) {
     if (pointerStart && Math.hypot(e.clientX - pointerStart.x, e.clientY - pointerStart.y) > DRAG_THRESHOLD) {
       didDrag = true;
@@ -210,9 +256,25 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 function endDrag(e) {
+  if (e) {
+    activePointers.delete(e.pointerId);
+    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+  }
+
+  if (pinching) {
+    if (activePointers.size < 2) {
+      pinching = false;
+      pinchStartDist = 0;
+      // Don't fall through into a single-finger drag; require a fresh tap.
+      dragging = false;
+      pointerStart = null;
+      canvas.style.cursor = e ? hoverCursor(e.clientX, e.clientY) : 'default';
+    }
+    return;
+  }
+
   if (!dragging) return;
   dragging = false;
-  if (e && canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
   if (e && !didDrag) {
     const pin = pinAtClient(e.clientX, e.clientY);
     if (pin) lightbox.open(pin.userData.location);
