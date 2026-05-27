@@ -16,7 +16,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
 camera.position.set(0, 0, 2.6);
 
-const MIN_Z = 1.3;
+const MIN_Z = 1.05;
 const MAX_Z = 5;
 
 function zoomCamera(factor) {
@@ -96,9 +96,10 @@ loadLineFeatures(COASTLINE_URL, 0x000000, 1.001).catch((err) => console.error(er
 loadLineFeatures(BORDERS_URL, 0x000000, 1.001).catch((err) => console.error(err));
 
 const pinObjects = [];
-const HEAD_RADIUS = 0.0165;
-const STEM_RADIUS = 0.0026;
-const STEM_HEIGHT = 0.0375;
+const pinGroups = [];
+const HEAD_RADIUS = 0.009;
+const STEM_RADIUS = 0.0015;
+const STEM_HEIGHT = 0.021;
 const stemGeometry = new THREE.CylinderGeometry(STEM_RADIUS, STEM_RADIUS, STEM_HEIGHT, 12);
 const headGeometry = new THREE.SphereGeometry(HEAD_RADIUS, 24, 24);
 const upY = new THREE.Vector3(0, 1, 0);
@@ -121,6 +122,7 @@ function placePin(lat, lng, headMat, stemMat, location) {
     stem.userData.location = location;
     head.userData.location = location;
     pinObjects.push(stem, head);
+    pinGroups.push(group);
   }
   globe.add(group);
 }
@@ -166,6 +168,28 @@ function pinAtClient(clientX, clientY) {
   return pinObjects.includes(hits[0].object) ? hits[0].object : null;
 }
 
+// Direction (from globe center) of the sphere point under a screen position, or null.
+function sphereHitDir(clientX, clientY) {
+  setRayFromClient(clientX, clientY);
+  const hits = raycaster.intersectObject(sphere);
+  return hits.length ? hits[0].point.clone().normalize() : null;
+}
+
+// Zoom by `factor`, keeping the geography under (clientX, clientY) pinned on screen —
+// the area you pinch on stays put and spreads apart, like a map.
+function zoomAt(clientX, clientY, factor) {
+  const newZ = THREE.MathUtils.clamp(camera.position.z * factor, MIN_Z, MAX_Z);
+  if (newZ === camera.position.z) return;
+  const before = sphereHitDir(clientX, clientY);
+  camera.position.z = newZ;
+  camera.updateMatrixWorld();
+  if (!before) return;
+  const after = sphereHitDir(clientX, clientY);
+  if (after) {
+    globe.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(before, after));
+  }
+}
+
 let dragging = false;
 let didDrag = false;
 let pointerStart = null;
@@ -176,16 +200,27 @@ let velY = 0;
 
 const activePointers = new Map();
 let pinching = false;
-let pinchStartDist = 0;
-let pinchStartZ = 0;
+let pinchPrevDist = 0;
 
 function pinchDistance() {
   const pts = [...activePointers.values()];
   return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
 }
 
+function pinchMidpoint() {
+  const pts = [...activePointers.values()];
+  return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+}
+
+const ROTATE_SPEED = 0.005;
+// Camera-to-surface distance at the default zoom (2.6). Drag/scroll rotation is
+// scaled relative to this so the surface tracks the cursor at the same on-screen
+// rate at any zoom — otherwise a fixed angle whips the view around when zoomed in.
+const REF_SURFACE_DIST = 2.6 - RADIUS * globe.scale.x;
+
 function applyRotation(dx, dy) {
-  const speed = 0.005;
+  const surfaceDist = Math.max(camera.position.z - RADIUS * globe.scale.x, 0.05);
+  const speed = ROTATE_SPEED * (surfaceDist / REF_SURFACE_DIST);
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * speed);
   const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), dy * speed);
   globe.quaternion.premultiply(qYaw).premultiply(qPitch);
@@ -209,8 +244,7 @@ canvas.addEventListener('pointerdown', (e) => {
     pointerStart = null;
     velX = 0;
     velY = 0;
-    pinchStartDist = pinchDistance();
-    pinchStartZ = camera.position.z;
+    pinchPrevDist = pinchDistance();
     canvas.style.cursor = 'default';
     return;
   }
@@ -233,9 +267,11 @@ canvas.addEventListener('pointermove', (e) => {
 
   if (pinching && activePointers.size >= 2) {
     const d = pinchDistance();
-    if (pinchStartDist > 0 && d > 0) {
-      camera.position.z = THREE.MathUtils.clamp(pinchStartZ * (pinchStartDist / d), MIN_Z, MAX_Z);
+    if (pinchPrevDist > 0 && d > 0) {
+      const mid = pinchMidpoint();
+      zoomAt(mid.x, mid.y, pinchPrevDist / d);
     }
+    pinchPrevDist = d;
     return;
   }
 
@@ -264,7 +300,7 @@ function endDrag(e) {
   if (pinching) {
     if (activePointers.size < 2) {
       pinching = false;
-      pinchStartDist = 0;
+      pinchPrevDist = 0;
       // Don't fall through into a single-finger drag; require a fresh tap.
       dragging = false;
       pointerStart = null;
@@ -289,7 +325,13 @@ canvas.addEventListener('pointerleave', endDrag);
 canvas.addEventListener(
   'wheel',
   (e) => {
-    if (e.ctrlKey) return;
+    if (e.ctrlKey) {
+      // Trackpad pinch (and ctrl+scroll) arrive as wheel events — zoom the globe
+      // toward the cursor instead of letting the browser page-zoom.
+      e.preventDefault();
+      zoomAt(e.clientX, e.clientY, Math.exp(e.deltaY * 0.01));
+      return;
+    }
     if (!pointerOnSphere(e.clientX, e.clientY)) return;
     e.preventDefault();
     applyRotation(-e.deltaX, -e.deltaY);
@@ -298,6 +340,15 @@ canvas.addEventListener(
 );
 
 function tick() {
+  // Render pins at a near-constant on-screen size so zooming in spreads clustered
+  // markers apart (e.g. the Bay Area) instead of magnifying them together.
+  const pinScale = THREE.MathUtils.clamp(
+    (camera.position.z - RADIUS * globe.scale.x) / REF_SURFACE_DIST,
+    0.04,
+    1.2,
+  );
+  for (const g of pinGroups) g.scale.setScalar(pinScale);
+
   if (!dragging) {
     velX *= 0.94;
     velY *= 0.94;
