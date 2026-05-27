@@ -152,6 +152,7 @@
   <script>
     const REPO = 'rohansonecha/rohansonecha.github.io';
     const DELETE_BRANCH = 'main';
+    const ISSUE_URL_LIMIT = 7000; // GitHub rejects prefilled new-issue URLs longer than ~8KB
     const SCRUB_KEY = 'debug-marked-photos';
     const ORG_KEY = 'debug-organize-draft';
     const ORG_BASE_KEY = 'debug-organize-base';
@@ -164,6 +165,7 @@
     let scrubMarked = new Set();
     let draft = null;            // array of location objects (organize mode draft)
     let selectedPhotos = new Set();
+    let orgSubmitState = { oversized: false, body: '' }; // backs the "Submit changes" link
 
     // ---------- utilities ----------
     async function loadText(url) {
@@ -608,26 +610,54 @@
       return lines;
     }
 
-    function organizeIssueUrl(ops) {
+    // Compact, diff-only issue body: references filenames and writes out the new
+    // ordering rather than dumping the whole locations array (which overflowed the
+    // GitHub new-issue URL length limit). Each instruction is self-contained so a
+    // monitoring agent can apply it to locations.js without the full final state.
+    function organizeIssueBody(ops) {
+      const base = (p) => p.split('/').pop();
+      const folderOf = (p) => { const parts = p.split('/'); return parts.length >= 3 ? parts[1] : '(root)'; };
+      const lines = [
+        '@claude please apply these `locations.js` edits, then regenerate `images-manifest.json` (run `./regen-manifest.sh`). Single commit on `main`.',
+        '',
+        'Photo names are filenames within each location’s `images/<folder>/` directory.',
+        '',
+        '## Changes',
+      ];
+      for (const op of ops) {
+        if (op.type === 'create') {
+          const folder = op.loc.photos.length ? folderOf(op.loc.photos[0]) : '(new folder)';
+          lines.push(`### Create location \`${op.loc.id}\` — "${op.loc.name}" (lat ${op.loc.lat}, lng ${op.loc.lng}), folder \`images/${folder}/\``);
+          if (op.loc.photos.length) lines.push(op.loc.photos.map((p) => `  - ${base(p)}`).join('\n'));
+        } else if (op.type === 'rename') {
+          lines.push(`- Rename \`${op.id}\`: "${op.from}" → "${op.to}"`);
+        } else if (op.type === 'coords') {
+          lines.push(`- Coords \`${op.id}\`: (${op.from.lat}, ${op.from.lng}) → (${op.to.lat}, ${op.to.lng})`);
+        } else if (op.type === 'delete') {
+          lines.push(`- Remove location \`${op.id}\` ("${op.name}") from locations.js (files stay on disk)`);
+        } else if (op.type === 'move') {
+          for (const m of op.moves) lines.push(`- Move \`${base(m.photo)}\` (\`${m.photo}\`): \`${m.from}\` → \`${m.to}\``);
+        } else if (op.type === 'drop') {
+          for (const d of op.dropped) lines.push(`- Unlink \`${d.photo}\` from \`${d.from}\``);
+        } else if (op.type === 'reorder') {
+          lines.push(`### Reorder \`${op.id}\` — new order (${op.order.length} photo${op.order.length === 1 ? '' : 's'}):`);
+          lines.push(op.order.map((p, i) => `  ${i + 1}. ${base(p)}`).join('\n'));
+        }
+      }
+      lines.push('', '_(Filed from /debug.html — Organize mode)_');
+      return lines.join('\n');
+    }
+
+    // Returns { url, body, oversized }. If the prefilled URL would exceed GitHub's
+    // limit, url points at a blank new-issue page and the caller copies body to the
+    // clipboard instead.
+    function organizeIssue(ops) {
       const title = `Reorganize photos (${ops.length} change set${ops.length === 1 ? '' : 's'})`;
-      const planLines = describePlan(ops);
-      const body = [
-        '@claude please apply these locations.js changes.',
-        '',
-        '## Plan',
-        ...planLines,
-        '',
-        '## Desired final state',
-        '',
-        'Below is the full intended locations array (id, name, lat, lng, photos). Use this as the source of truth and update `locations.js` to match. Generate any missing `make()` helpers for new folders. Single commit on `main`.',
-        '',
-        '```json',
-        JSON.stringify(draft, null, 2),
-        '```',
-        '',
-        '_(Filed from /debug.html — Organize mode)_',
-      ].join('\n');
-      return `https://github.com/${REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+      const body = organizeIssueBody(ops);
+      const newIssue = `https://github.com/${REPO}/issues/new`;
+      const full = `${newIssue}?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+      if (full.length <= ISSUE_URL_LIMIT) return { url: full, body, oversized: false };
+      return { url: `${newIssue}?title=${encodeURIComponent(title)}`, body, oversized: true };
     }
 
     function updateOrganizePanel() {
@@ -650,10 +680,13 @@
       }
       const submit = document.getElementById('org-submit');
       if (ops.length) {
-        submit.href = organizeIssueUrl(ops);
+        const issue = organizeIssue(ops);
+        submit.href = issue.url;
+        orgSubmitState = { oversized: issue.oversized, body: issue.body };
         submit.setAttribute('aria-disabled', 'false');
       } else {
         submit.removeAttribute('href');
+        orgSubmitState = { oversized: false, body: '' };
         submit.setAttribute('aria-disabled', 'true');
       }
     }
@@ -796,6 +829,14 @@
         updateOrganizePanel();
       });
       document.getElementById('org-new-loc').addEventListener('click', showNewLocForm);
+      document.getElementById('org-submit').addEventListener('click', () => {
+        // For oversized change sets the link opens a blank issue; hand the body
+        // over via clipboard so the user can paste it into the description.
+        if (orgSubmitState.oversized && orgSubmitState.body) {
+          navigator.clipboard?.writeText(orgSubmitState.body).catch(() => {});
+          alert('Too many changes to prefill via URL. The full issue text was copied to your clipboard — paste it into the new issue’s description.');
+        }
+      });
       document.getElementById('org-reset').addEventListener('click', () => {
         if (!confirm('Discard the organize draft and revert to current locations.js?')) return;
         resetOrganize();
