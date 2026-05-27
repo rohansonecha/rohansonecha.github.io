@@ -287,7 +287,9 @@ canvas.addEventListener('pointermove', (e) => {
     let dAng = ang - pinchPrevAngle;
     if (dAng > Math.PI) dAng -= 2 * Math.PI;
     else if (dAng < -Math.PI) dAng += 2 * Math.PI;
-    rollVel += -dAng;
+    // Only roll from a deliberate twist; ignore large per-frame jumps from touch noise
+    // or finger re-indexing, which otherwise fling the globe around the view axis.
+    if (Math.abs(dAng) < 0.4) rollVel += -dAng;
     pinchPrevAngle = ang;
     return;
   }
@@ -384,7 +386,10 @@ function tick() {
     camera.updateMatrixWorld();
     if (before) {
       const after = sphereHitDir(zoomFocusX, zoomFocusY);
-      if (after) {
+      // Re-center only when the focal point barely moves. Near the globe's limb the hit
+      // direction swings wildly and setFromUnitVectors can flip ~180° around the view
+      // axis — that was the rogue spin while zooming. Skip the correction there.
+      if (after && before.dot(after) > 0.99) {
         globe.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(before, after));
       }
     }
