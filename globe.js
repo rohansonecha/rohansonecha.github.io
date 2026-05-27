@@ -19,13 +19,6 @@ camera.position.set(0, 0, 2.6);
 const MIN_Z = 1.05;
 const MAX_Z = 5;
 
-function zoomCamera(factor) {
-  camera.position.z = THREE.MathUtils.clamp(camera.position.z * factor, MIN_Z, MAX_Z);
-}
-
-document.getElementById('zoom-in')?.addEventListener('click', () => zoomCamera(1 / 1.25));
-document.getElementById('zoom-out')?.addEventListener('click', () => zoomCamera(1.25));
-
 const RADIUS = 1;
 const globe = new THREE.Group();
 globe.scale.setScalar(0.875);
@@ -201,6 +194,7 @@ let velY = 0;
 const activePointers = new Map();
 let pinching = false;
 let pinchPrevDist = 0;
+let pinchPrevAngle = 0;
 
 function pinchDistance() {
   const pts = [...activePointers.values()];
@@ -212,11 +206,19 @@ function pinchMidpoint() {
   return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
 }
 
+function pinchAngle() {
+  const pts = [...activePointers.values()];
+  return Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+}
+
 const ROTATE_SPEED = 0.005;
 // Camera-to-surface distance at the default zoom (2.6). Drag/scroll rotation is
 // scaled relative to this so the surface tracks the cursor at the same on-screen
 // rate at any zoom — otherwise a fixed angle whips the view around when zoomed in.
 const REF_SURFACE_DIST = 2.6 - RADIUS * globe.scale.x;
+
+// How much pins grow as you zoom in: 0 = constant on-screen size, 1 = glued to the globe.
+const PIN_ZOOM_GROWTH = 0.25;
 
 function applyRotation(dx, dy) {
   const surfaceDist = Math.max(camera.position.z - RADIUS * globe.scale.x, 0.05);
@@ -224,6 +226,12 @@ function applyRotation(dx, dy) {
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * speed);
   const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), dy * speed);
   globe.quaternion.premultiply(qYaw).premultiply(qPitch);
+}
+
+// Roll: spin the globe around the view axis (straight out of the screen), like turning
+// a wheel — the third rotation axis alongside drag-yaw and drag-pitch.
+function applyRoll(angle) {
+  globe.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle));
 }
 
 const DRAG_THRESHOLD = 5;
@@ -245,6 +253,7 @@ canvas.addEventListener('pointerdown', (e) => {
     velX = 0;
     velY = 0;
     pinchPrevDist = pinchDistance();
+    pinchPrevAngle = pinchAngle();
     canvas.style.cursor = 'default';
     return;
   }
@@ -267,11 +276,17 @@ canvas.addEventListener('pointermove', (e) => {
 
   if (pinching && activePointers.size >= 2) {
     const d = pinchDistance();
+    const ang = pinchAngle();
     if (pinchPrevDist > 0 && d > 0) {
       const mid = pinchMidpoint();
       zoomAt(mid.x, mid.y, pinchPrevDist / d);
     }
+    let dAng = ang - pinchPrevAngle;
+    if (dAng > Math.PI) dAng -= 2 * Math.PI;
+    else if (dAng < -Math.PI) dAng += 2 * Math.PI;
+    applyRoll(-dAng);
     pinchPrevDist = d;
+    pinchPrevAngle = ang;
     return;
   }
 
@@ -334,19 +349,36 @@ canvas.addEventListener(
     }
     if (!pointerOnSphere(e.clientX, e.clientY)) return;
     e.preventDefault();
+    if (e.shiftKey) {
+      // Shift + scroll rolls the globe (the cross-browser fallback for the twist).
+      applyRoll((e.deltaX || e.deltaY) * 0.0015);
+      return;
+    }
     applyRotation(-e.deltaX, -e.deltaY);
   },
   { passive: false },
 );
 
+// Safari reports the trackpad two-finger twist as GestureEvents (Chrome/Firefox fire
+// nothing for it — they use Shift+scroll above). Read only the rotation here; zoom
+// still flows through the ctrl+wheel path so the two gestures don't fight.
+let gesturePrevRotation = 0;
+canvas.addEventListener('gesturestart', (e) => {
+  e.preventDefault();
+  gesturePrevRotation = e.rotation;
+});
+canvas.addEventListener('gesturechange', (e) => {
+  e.preventDefault();
+  applyRoll((-(e.rotation - gesturePrevRotation) * Math.PI) / 180);
+  gesturePrevRotation = e.rotation;
+});
+canvas.addEventListener('gestureend', (e) => e.preventDefault());
+
 function tick() {
-  // Render pins at a near-constant on-screen size so zooming in spreads clustered
-  // markers apart (e.g. the Bay Area) instead of magnifying them together.
-  const pinScale = THREE.MathUtils.clamp(
-    (camera.position.z - RADIUS * globe.scale.x) / REF_SURFACE_DIST,
-    0.04,
-    1.2,
-  );
+  // Pins hold a constant on-screen size when zoomed out, then grow modestly once you
+  // zoom past the default — enough to read each marker without fully re-clustering them.
+  const cs = Math.max(camera.position.z - RADIUS * globe.scale.x, 0.01) / REF_SURFACE_DIST;
+  const pinScale = THREE.MathUtils.clamp(cs < 1 ? Math.pow(cs, 1 - PIN_ZOOM_GROWTH) : cs, 0.05, 3);
   for (const g of pinGroups) g.scale.setScalar(pinScale);
 
   if (!dragging) {
