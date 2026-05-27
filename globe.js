@@ -19,6 +19,12 @@ camera.position.set(0, 0, 2.6);
 const MIN_Z = 1.05;
 const MAX_Z = 5;
 
+// Input is decoupled from rendering: gestures feed a target zoom / pending velocities,
+// and each frame the camera eases toward them. This is what keeps motion smooth instead
+// of snapping to raw touch deltas. Lower = smoother but laggier.
+const ZOOM_EASE = 0.18;
+const ROT_DAMP = 0.3;
+
 const RADIUS = 1;
 const globe = new THREE.Group();
 globe.scale.setScalar(0.875);
@@ -168,32 +174,24 @@ function sphereHitDir(clientX, clientY) {
   return hits.length ? hits[0].point.clone().normalize() : null;
 }
 
-// Zoom by `factor`, keeping the geography under (clientX, clientY) pinned on screen —
-// the area you pinch on stays put and spreads apart, like a map.
-function zoomAt(clientX, clientY, factor) {
-  const newZ = THREE.MathUtils.clamp(camera.position.z * factor, MIN_Z, MAX_Z);
-  if (newZ === camera.position.z) return;
-  const before = sphereHitDir(clientX, clientY);
-  camera.position.z = newZ;
-  camera.updateMatrixWorld();
-  if (!before) return;
-  const after = sphereHitDir(clientX, clientY);
-  if (after) {
-    globe.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(before, after));
-  }
-}
-
 let dragging = false;
 let didDrag = false;
 let pointerStart = null;
 let prevX = 0;
 let prevY = 0;
-let velX = 0;
-let velY = 0;
+
+// Smoothed motion state — written by input handlers, consumed each frame in tick().
+let targetZ = camera.position.z;
+let zoomFocusX = 0;
+let zoomFocusY = 0;
+let yawVel = 0;
+let pitchVel = 0;
+let rollVel = 0;
 
 const activePointers = new Map();
 let pinching = false;
-let pinchPrevDist = 0;
+let pinchStartDist = 0;
+let pinchStartZ = 0;
 let pinchPrevAngle = 0;
 
 function pinchDistance() {
@@ -250,9 +248,10 @@ canvas.addEventListener('pointerdown', (e) => {
     pinching = true;
     dragging = false;
     pointerStart = null;
-    velX = 0;
-    velY = 0;
-    pinchPrevDist = pinchDistance();
+    yawVel = 0;
+    pitchVel = 0;
+    pinchStartDist = pinchDistance();
+    pinchStartZ = targetZ;
     pinchPrevAngle = pinchAngle();
     canvas.style.cursor = 'default';
     return;
@@ -263,8 +262,8 @@ canvas.addEventListener('pointerdown', (e) => {
   pointerStart = { x: e.clientX, y: e.clientY };
   prevX = e.clientX;
   prevY = e.clientY;
-  velX = 0;
-  velY = 0;
+  yawVel = 0;
+  pitchVel = 0;
   canvas.setPointerCapture(e.pointerId);
   canvas.style.cursor = 'grabbing';
 });
@@ -277,15 +276,18 @@ canvas.addEventListener('pointermove', (e) => {
   if (pinching && activePointers.size >= 2) {
     const d = pinchDistance();
     const ang = pinchAngle();
-    if (pinchPrevDist > 0 && d > 0) {
+    // Absolute zoom from the gesture start — stable, so a single noisy frame can't
+    // compound into a runaway zoom the way a per-frame ratio can. 8px guards div-by-tiny.
+    if (pinchStartDist > 8 && d > 8) {
+      targetZ = THREE.MathUtils.clamp(pinchStartZ * (pinchStartDist / d), MIN_Z, MAX_Z);
       const mid = pinchMidpoint();
-      zoomAt(mid.x, mid.y, pinchPrevDist / d);
+      zoomFocusX = mid.x;
+      zoomFocusY = mid.y;
     }
     let dAng = ang - pinchPrevAngle;
     if (dAng > Math.PI) dAng -= 2 * Math.PI;
     else if (dAng < -Math.PI) dAng += 2 * Math.PI;
-    applyRoll(-dAng);
-    pinchPrevDist = d;
+    rollVel += -dAng;
     pinchPrevAngle = ang;
     return;
   }
@@ -294,13 +296,10 @@ canvas.addEventListener('pointermove', (e) => {
     if (pointerStart && Math.hypot(e.clientX - pointerStart.x, e.clientY - pointerStart.y) > DRAG_THRESHOLD) {
       didDrag = true;
     }
-    const dx = e.clientX - prevX;
-    const dy = e.clientY - prevY;
+    yawVel += e.clientX - prevX;
+    pitchVel += e.clientY - prevY;
     prevX = e.clientX;
     prevY = e.clientY;
-    velX = dx;
-    velY = dy;
-    applyRotation(dx, dy);
     return;
   }
   canvas.style.cursor = hoverCursor(e.clientX, e.clientY);
@@ -315,7 +314,7 @@ function endDrag(e) {
   if (pinching) {
     if (activePointers.size < 2) {
       pinching = false;
-      pinchPrevDist = 0;
+      pinchStartDist = 0;
       // Don't fall through into a single-finger drag; require a fresh tap.
       dragging = false;
       pointerStart = null;
@@ -344,17 +343,20 @@ canvas.addEventListener(
       // Trackpad pinch (and ctrl+scroll) arrive as wheel events — zoom the globe
       // toward the cursor instead of letting the browser page-zoom.
       e.preventDefault();
-      zoomAt(e.clientX, e.clientY, Math.exp(e.deltaY * 0.01));
+      targetZ = THREE.MathUtils.clamp(targetZ * Math.exp(e.deltaY * 0.01), MIN_Z, MAX_Z);
+      zoomFocusX = e.clientX;
+      zoomFocusY = e.clientY;
       return;
     }
     if (!pointerOnSphere(e.clientX, e.clientY)) return;
     e.preventDefault();
     if (e.shiftKey) {
       // Shift + scroll rolls the globe (the cross-browser fallback for the twist).
-      applyRoll((e.deltaX || e.deltaY) * 0.0015);
+      rollVel += (e.deltaX || e.deltaY) * 0.0015;
       return;
     }
-    applyRotation(-e.deltaX, -e.deltaY);
+    yawVel += -e.deltaX;
+    pitchVel += -e.deltaY;
   },
   { passive: false },
 );
@@ -369,25 +371,41 @@ canvas.addEventListener('gesturestart', (e) => {
 });
 canvas.addEventListener('gesturechange', (e) => {
   e.preventDefault();
-  applyRoll((-(e.rotation - gesturePrevRotation) * Math.PI) / 180);
+  rollVel += (-(e.rotation - gesturePrevRotation) * Math.PI) / 180;
   gesturePrevRotation = e.rotation;
 });
 canvas.addEventListener('gestureend', (e) => e.preventDefault());
 
 function tick() {
+  // Ease the camera toward the target zoom, keeping the focal point pinned on screen.
+  if (Math.abs(targetZ - camera.position.z) > 1e-4) {
+    const before = sphereHitDir(zoomFocusX, zoomFocusY);
+    camera.position.z += (targetZ - camera.position.z) * ZOOM_EASE;
+    camera.updateMatrixWorld();
+    if (before) {
+      const after = sphereHitDir(zoomFocusX, zoomFocusY);
+      if (after) {
+        globe.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(before, after));
+      }
+    }
+  }
+
   // Pins hold a constant on-screen size when zoomed out, then grow modestly once you
   // zoom past the default — enough to read each marker without fully re-clustering them.
   const cs = Math.max(camera.position.z - RADIUS * globe.scale.x, 0.01) / REF_SURFACE_DIST;
   const pinScale = THREE.MathUtils.clamp(cs < 1 ? Math.pow(cs, 1 - PIN_ZOOM_GROWTH) : cs, 0.05, 3);
   for (const g of pinGroups) g.scale.setScalar(pinScale);
 
-  if (!dragging) {
-    velX *= 0.94;
-    velY *= 0.94;
-    if (Math.abs(velX) > 0.02 || Math.abs(velY) > 0.02) {
-      applyRotation(velX, velY);
-    }
+  // Consume a fraction of the pending rotation/roll each frame: smooths noisy touch
+  // input and turns leftover motion into a gentle glide instead of a single-frame fling.
+  if (Math.abs(yawVel) > 0.01 || Math.abs(pitchVel) > 0.01) {
+    applyRotation(yawVel * ROT_DAMP, pitchVel * ROT_DAMP);
   }
+  yawVel *= 1 - ROT_DAMP;
+  pitchVel *= 1 - ROT_DAMP;
+  if (Math.abs(rollVel) > 1e-5) applyRoll(rollVel * ROT_DAMP);
+  rollVel *= 1 - ROT_DAMP;
+
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
