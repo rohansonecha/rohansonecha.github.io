@@ -24,6 +24,9 @@ const MAX_Z = 5;
 // of snapping to raw touch deltas. Lower = smoother but laggier.
 const ZOOM_EASE = 0.18;
 const ROT_DAMP = 0.3;
+// Hard ceiling on roll speed so a fast twist-flick can't build up into a runaway spin
+// around the view axis. Applied roll per frame is at most MAX_ROLL_VEL * ROT_DAMP.
+const MAX_ROLL_VEL = 0.3;
 
 const RADIUS = 1;
 const globe = new THREE.Group();
@@ -289,7 +292,7 @@ canvas.addEventListener('pointermove', (e) => {
     else if (dAng < -Math.PI) dAng += 2 * Math.PI;
     // Only roll from a deliberate twist; ignore large per-frame jumps from touch noise
     // or finger re-indexing, which otherwise fling the globe around the view axis.
-    if (Math.abs(dAng) < 0.4) rollVel += -dAng;
+    if (Math.abs(dAng) < 0.25) rollVel += -dAng;
     pinchPrevAngle = ang;
     return;
   }
@@ -408,6 +411,7 @@ function tick() {
   }
   yawVel *= 1 - ROT_DAMP;
   pitchVel *= 1 - ROT_DAMP;
+  rollVel = THREE.MathUtils.clamp(rollVel, -MAX_ROLL_VEL, MAX_ROLL_VEL);
   if (Math.abs(rollVel) > 1e-5) applyRoll(rollVel * ROT_DAMP);
   rollVel *= 1 - ROT_DAMP;
 
